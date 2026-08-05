@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import Landing from './components/Landing'
 import Card from './components/Card'
 import type { GameState, QuizItem } from './types'
@@ -10,6 +10,24 @@ function App() {
     const [score, setScore] = useState(0)
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState<any>(null)
+    const token = useRef(null)
+
+    useEffect(() => {
+        getToken()
+        return () => {
+            fetch(`https://opentdb.com/api_token.php?command=reset&token=${token.current}`)
+        }
+    }, [])
+
+    async function getToken() {
+        try {
+            const res = await fetch('https://opentdb.com/api_token.php?command=request')
+            const data = await res.json()
+            token.current = data.token
+        } catch(err) {
+            setError(err)
+        }
+    }
 
     function startGame() {
         if (score) {
@@ -23,12 +41,21 @@ function App() {
     async function loadData() {
         setLoading(true)
         try {
-            const res = await fetch('https://opentdb.com/api.php?amount=5&type=multiple')
+            const url = token.current ? 
+                `https://opentdb.com/api.php?amount=5&type=multiple&token=${token.current}` : 
+                'https://opentdb.com/api.php?amount=5&type=multiple'
+            const res = await fetch(url)
             const data = await res.json()
-            if (data.response_code !== 0) {
+
+            // if response code says token is invalid or empty, get a new one and try again.
+            if (data.response_code === 3 || data.response_code === 4) {
+                getToken()
+                loadData()
+            } else if (data.response_code !== 0) {
                 setError(`Fetch returned with response code ${data.response_code}.`)
                 return
             }
+            
             const decodedData: QuizItem[] = data.results.map((item: any) => {
                 return {
                     question: decode(item.question),
